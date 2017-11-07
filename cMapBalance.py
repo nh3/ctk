@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 '''
-Usage: balanceMatrix.py <inMat> <outMat> <coef>
+Usage: cMapBalance.py <inMat> <outMat> <coef>
 
 Options:
     <inMat>     input sparse matrix in scipy npz format
