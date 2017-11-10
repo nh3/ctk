@@ -25,41 +25,39 @@ signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 import errno
 import os.path
 import numpy as np
-from numpy.lib.recfunctions import append_fields
+import pandas as pd
 from scipy.sparse import load_npz
-from scipy.stats import ttest_ind, ttest_1samp
-from scipy.interpolate import UnivariateSpline
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages                                                                                                                                           
-from matplotlib.colors import LinearSegmentedColormap
+#from scipy.stats import ttest_ind, ttest_1samp
+#from scipy.interpolate import UnivariateSpline
+#import matplotlib
+#matplotlib.use('Agg')
+#import matplotlib.pyplot as plt
+#from matplotlib.backends.backend_pdf import PdfPages
+#from matplotlib.colors import LinearSegmentedColormap
 
 
 def readLoops(filename):
-    loops = np.loadtxt(filename, delimiter='\t',
-            dtype={'names':('c1','s1','e1','c2','s2','e2'),
-                   'formats':((np.unicode_,8), int, int,
-                              (np.unicode_,8), int, int)})
-    m1 = (loops['s1']+loops['e1'])/2
-    m2 = (loops['s2']+loops['e2'])/2
-    return append_fields(loops, ('m1','m2'), (m1,m2), dtypes=(int,int))
+    loops = pd.read_table(filename, header=None,
+            names=['c1','s1','e1','c2','s2','e2'],
+            dtype={'c1':str,'s1':int,'e1':int,'c2':str,'s2':int,'e2':int})
+    loops['m1'] = ((loops.s1+loops.e1)/2).astype(int)
+    loops['m2'] = ((loops.s2+loops.e2)/2).astype(int)
+    return loops
 
 
 def filterLoops(loops, res, nflnk, n, minD=None):
     if minD is None:
         minD = np.ceil(nflnk*np.sqrt(2)) * res
     minDB = minD / res
-    k = np.logical_and(np.abs(loops['idx1']-loops['idx2'])>=minDB,
-            np.logical_and(loops['idx1']>nflnk, loops['idx1']<n-nflnk),
-            np.logical_and(loops['idx2']>nflnk, loops['idx2']<n-nflnk))
-    return loops[k]
+    return loops[(np.abs(loops.idx1-loops.idx2)>=minDB)
+            & (loops.idx1>nflnk) & (loops.idx1<n-nflnk)
+            & (loops.idx2>nflnk) & (loops.idx2<n-nflnk)]
 
 
 def mapLoops(loops, res):
-    idx1 = np.ceil((loops['m1']-res+0.1)/res)
-    idx2 = np.ceil((loops['m2']-res+0.1)/res)
-    return append_fields(loops, ('idx1','idx2'), (idx1,idx2), dtypes=(int,int))
+    loops['idx1'] = np.ceil((loops.m1-res+0.1)/res).astype(int)
+    loops['idx2'] = np.ceil((loops.m2-res+0.1)/res).astype(int)
+    return loops
 
 
 def makeDistanceMatrix(n):
@@ -73,16 +71,20 @@ def extractSubMatrix(matrix, dmat, loops, nflnk, bgmat=None):
     if bgmat is not None:
         submats = [matrix[(i-nflnk):(i+nflnk+1),(j-nflnk):(j+nflnk+1)]
                 / bgmat[(i-nflnk):(i+nflnk+1),(j-nflnk):(j+nflnk+1)]
-                for i,j in list(zip(loops['idx1'], loops['idx2']))]
+                for i,j in list(zip(loops.idx1, loops.idx2))]
     else:
         submats = [matrix[(i-nflnk):(i+nflnk+1),(j-nflnk):(j+nflnk+1)]
-                for i,j in list(zip(loops['idx1'], loops['idx2']))]
+                for i,j in list(zip(loops.idx1, loops.idx2))]
     return submats
 
 
 def filterMatrix(matrix, nonZeroProp=0.1):
     x = np.sum(matrix>0).astype(float) / np.prod(matrix.shape)
     return x > nonZeroProp
+
+
+def matrixSparsity(matrix):
+    return np.sum(matrix>0).astype(float) / np.prod(matrix.shape)
 
 
 def maskMid(nflnk):
@@ -100,22 +102,7 @@ def maskLowerLeft(nflnk):
     return mask
 
 
-def calcApaStatsV1(matrix):
-    n = matrix.shape[0]
-    nflnk = (n-1)/2
-    k_mid = maskMid(nflnk)
-    mid = matrix[k_mid][0]
-    rest = matrix[~k_mid]
-    fc_rest = mid/np.mean(rest)
-    t_rest,p_rest = ttest_1samp(matrix[~k_mid], mid)
-    k_LL = maskLowerLeft(nflnk)
-    LL = matrix[k_LL]
-    fc_LL = mid/np.mean(LL)
-    t_LL,p_LL = ttest_1samp(matrix[k_LL], mid)
-    return fc_rest,p_rest,fc_LL,p_LL
-
-
-def calcApaStatsV2(mats):
+def calcApaStats(mats):
     n = mats[0].shape[0]
     nflnk = (n-1)/2
     k_mid = maskMid(nflnk)
@@ -123,28 +110,7 @@ def calcApaStatsV2(mats):
     mids = np.array([m[k_mid][0] for m in mats])
     rest_means = np.array([np.nanmean(m[~k_mid]) for m in mats])
     LL_means = np.array([np.nanmean(m[k_LL]) for m in mats])
-
-    fc_rest = np.nanmean(mids)/np.nanmean(rest_means)
-    t_rest,p_rest = ttest_ind(mids, rest_means, equal_var=False, nan_policy='omit')
-    fc_LL = np.nanmean(mids)/np.nanmean(LL_means)
-    t_LL,p_LL = ttest_ind(mids, LL_means, equal_var=False, nan_policy='omit')
-    return fc_rest,p_rest,fc_LL,p_LL
-
-
-def calcApaStatsV3(mats):
-    n = mats[0].shape[0]
-    nflnk = (n-1)/2
-    k_mid = maskMid(nflnk)
-    k_LL = maskLowerLeft(nflnk)
-    mids = np.array([m[k_mid][0] for m in mats])
-    rest_means = np.array([np.nanmean(m[~k_mid]) for m in mats])
-    LL_means = np.array([np.nanmean(m[k_LL]) for m in mats])
-
-    #fc_rest = np.nanmean(mids)/np.nanmean(rest_means)
-    #t_rest,p_rest = ttest_ind(mids, rest_means, equal_var=False, nan_policy='omit')
-    #fc_LL = np.nanmean(mids)/np.nanmean(LL_means)
-    #t_LL,p_LL = ttest_ind(mids, LL_means, equal_var=False, nan_policy='omit')
-    return np.array([mids,rest_means,LL_means]).transpose()
+    return mids,rest_means,LL_means
 
 
 def calcDistanceDecay(matrix, dmat):
@@ -157,39 +123,13 @@ def calcDistanceDecay(matrix, dmat):
     return dd[dmat]
 
 
-def plotHeatmap(matMean, outpdf):
-    RdWh = LinearSegmentedColormap.from_list('RdWh', [(0,'white'),(1,'red')])
-    plt.imshow(matMean, cmap=RdWh)
-    plt.axis('off')
-    pp = PdfPages(outpdf)                                                                                                                                                                      
-    plt.savefig(pp, format='pdf')
-    pp.close()
-
-def saveAPA(submats, outprfx, rmbg=False):
-    matMean = np.mean(np.array(submats), axis=0)
-    matMean[np.isnan(matMean)] = np.nanmedian(matMean)
-
-    try:
-        os.makedirs(os.path.dirname(outprfx))
-    except OSError as e:
-        if e.errno == errno.EEXIST and os.path.isdir(os.path.dirname(outprfx)):
-            pass
-        else:
-            raise
-
-    if rmbg:
-        typ = 'rmbgAPA'
-    else:
-        typ = 'APA'
-    np.savetxt(outprfx+typ+'.txt', matMean, delimiter='\t', fmt='%.2e')
-    #plotHeatmap(matMean, outprfx + typ + '.pdf')
-
-    #fc_rest,p_rest,fc_ll,p_ll = calcApaStatsV1(matmean)
-    #fc_rest,p_rest,fc_ll,p_ll = calcApaStatsV2(submats)
-    stats = calcApaStatsV3(submats)
-    np.savetxt(outprfx+typ+'.stat', stats, delimiter='\t', fmt='%.2e')
-    #with open(outprfx + typ + '.stat', 'w') as fh:
-    #    print('{}\t{}\t{}\t{}'.format(outprfx, len(submats), fc_rest, p_rest),file=fh)
+#def plotHeatmap(matMean, outpdf):
+#    RdWh = LinearSegmentedColormap.from_list('RdWh', [(0,'white'),(1,'red')])
+#    plt.imshow(matMean, cmap=RdWh)
+#    plt.axis('off')
+#    pp = PdfPages(outpdf)
+#    plt.savefig(pp, format='pdf')
+#    pp.close()
 
 
 def main(args):
@@ -222,11 +162,41 @@ def main(args):
     loops = filterLoops(loops, res, nflnk, n, minD)
 
     submats = extractSubMatrix(matrix, dmat, loops, nflnk, bgmat=bgmat)
-    submats = [sm for sm in submats if filterMatrix(sm, nonZeroProp=mnzp)]
-    submats = [sm for sm in submats if sm.shape == (width,width)]
-    assert len(submats) > 0, 'No submats'
+    k_correct_shape = np.array([sm.shape==(width,width) for sm in submats])
+    submat_sparsity = np.array([matrixSparsity(sm) for sm in submats])
+    k_include = np.logical_and(k_correct_shape, submat_sparsity > mnzp)
+    assert sum(k_include) > 0, 'No submats'
 
-    saveAPA(submats, outprfx, rmbg)
+    submats = [submats[i] for i in np.where(k_include)[0]]
+    submats = np.array(submats)
+
+    matMean = np.mean(submats, axis=0)
+    matMean[np.isnan(matMean)] = np.nanmedian(matMean)
+
+    try:
+        os.makedirs(os.path.dirname(outprfx))
+    except OSError as e:
+        if e.errno == errno.EEXIST and os.path.isdir(os.path.dirname(outprfx)):
+            pass
+        else:
+            raise
+
+    if rmbg:
+        typ = 'rmbgAPA'
+    else:
+        typ = 'APA'
+    np.savetxt(outprfx+typ+'.txt', matMean, delimiter='\t', fmt='%.2e')
+
+    mids,rest_means,LL_means = calcApaStats(submats)
+    stats = pd.DataFrame({
+        'chrom'    :loops.c1[k_include],
+        'start'    :loops.s1[k_include],
+        'end'      :loops.s2[k_include],
+        'mid'      :mids,
+        'rest_mean':rest_means,
+        'LL_mean'  :LL_means})
+    stats.to_csv(outprfx+typ+'.stat', sep='\t', float_format='%.2e',
+            header=False, index=False)
 
 
 if __name__ == '__main__':
