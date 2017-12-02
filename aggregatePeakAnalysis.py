@@ -67,7 +67,7 @@ def makeDistanceMatrix(n):
     return dmat
 
 
-def extractSubMatrix(matrix, dmat, loops, nflnk, bgmat=None):
+def extractSubMatrix(matrix, loops, nflnk, bgmat=None):
     if bgmat is not None:
         submats = [matrix[(i-nflnk):(i+nflnk+1),(j-nflnk):(j+nflnk+1)]
                 / bgmat[(i-nflnk):(i+nflnk+1),(j-nflnk):(j+nflnk+1)]
@@ -161,7 +161,7 @@ def main(args):
         bgmat = None
     loops = filterLoops(loops, res, nflnk, n, minD)
 
-    submats = extractSubMatrix(matrix, dmat, loops, nflnk, bgmat=bgmat)
+    submats = extractSubMatrix(matrix, loops, nflnk, bgmat=bgmat)
     k_correct_shape = np.array([sm.shape==(width,width) for sm in submats])
     submat_sparsity = np.array([matrixSparsity(sm) for sm in submats])
     k_include = np.logical_and(k_correct_shape, submat_sparsity > mnzp)
