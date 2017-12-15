@@ -24,17 +24,6 @@ import scipy.sparse
 import pandas as pd
 from scipy.interpolate import splrep,splev
 
-#"""
-#Eight-order approximation centered at grid point derived from:
-#    Fornberg, Bengt (1988), "Generation of Finite Difference Formulas on Arbitrarily Spaced Grids",
-#        Mathematics of Computation 51 (184): 699-706, doi:10.1090/S0025-5718-1988-0935077-0
-#"""
-#def prepare_derivative_kernel(n):
-#    kernels = np.array([
-#        [-1.0/280, -4.0/105,  1.0/5, -4.0/5,         0, 4.0/5, -1.0/5, 4.0/105, -1.0/280],
-#        [-1.0/560,  8.0/315, -1.0/5,  8.0/5, -205.0/72, 8.0/5, -1.0/5, 8.0/315, -1.0/560]])
-#    return kernels[n-1]
-
 
 def moving_average(x, n=5):
     mask = np.isnan(x)
@@ -203,12 +192,13 @@ def main(args):
     insulations = pd.DataFrame({'x':xnew, 'y':y, 'dy':dy, 'ddy':ddy, 'ys':smoothed_y, 'dys':smoothed_dy, 'ddys':smoothed_ddy})
     boundaries = find_local_minimums(smoothed_y, smoothed_dy, smoothed_ddy, min_s*res_boost)
     boundaries['x'] = boundaries.idx*int(res/res_boost) + int(res/res_boost/2)
+    boundaries['called'] = (boundaries.depth_left>min_v) & (boundaries.depth_right>min_v)
 
     insFn = outPrfx + '.insulation.txt'
     bdFn = outPrfx + '.boundary.txt'
 
-    insulations[['x','ys','dys','ddys']].to_csv(insFn, sep='\t', na_rep='NA', header=True, index=False)
-    boundaries[(boundaries.depth_left>min_v) & (boundaries.depth_right>min_v)].to_csv(bdFn, sep='\t', na_rep='NA', header=True, index=False)
+    insulations[['x','y','ys','dys','ddys']].to_csv(insFn, sep='\t', na_rep='NA', header=True, index=False)
+    boundaries.to_csv(bdFn, sep='\t', na_rep='NA', header=True, index=False)
 
 
 if __name__ == '__main__':
