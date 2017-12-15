@@ -25,15 +25,9 @@ signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 import errno
 import os.path
 import numpy as np
+np.seterr(divide='ignore', invalid='ignore')
 import pandas as pd
 from scipy.sparse import load_npz
-#from scipy.stats import ttest_ind, ttest_1samp
-#from scipy.interpolate import UnivariateSpline
-#import matplotlib
-#matplotlib.use('Agg')
-#import matplotlib.pyplot as plt
-#from matplotlib.backends.backend_pdf import PdfPages
-#from matplotlib.colors import LinearSegmentedColormap
 
 
 def readLoops(filename):
