@@ -20,6 +20,7 @@ import logging
 signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
 import numpy as np
+np.seterr(divide='ignore', invalid='ignore')
 import scipy.sparse
 import pandas as pd
 from scipy.interpolate import splrep,splev

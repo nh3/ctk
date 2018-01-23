@@ -31,6 +31,7 @@ from collections import OrderedDict as ordict
 from collections import deque
 from math import floor,ceil
 import numpy as np
+np.seterr(divide='ignore', invalid='ignore')
 import scipy.sparse
 
 MAX_DENSE = 100000
