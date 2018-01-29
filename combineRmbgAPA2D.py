@@ -28,11 +28,11 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.colors import LinearSegmentedColormap
 
 
-def plotHeatmap(matMean, outpdf, minPct=1, maxPct=99, maxFC=1.5):
+def plotHeatmap(matMean, outpdf, minPct=2, maxPct=98, maxFC=1.5):
     RdWh = LinearSegmentedColormap.from_list('RdWh', [(0,'white'),(1,'red')])
-    xmin = np.percentile(matMean, minPct)
+    xmin = np.nanpercentile(matMean, minPct)
     pp = PdfPages(outpdf)
-    plt.imshow(matMean, cmap=RdWh, vmin=xmin, vmax=xmin*maxFC)
+    plt.imshow(np.log2(matMean), cmap=RdWh, vmin=np.log2(xmin), vmax=np.log2(xmin*maxFC))
     plt.savefig(pp, format='pdf', bbox_inches='tight')
     plt.close()
     plt.imshow(matMean, cmap=RdWh, vmin=xmin, vmax=np.percentile(matMean, maxPct))
