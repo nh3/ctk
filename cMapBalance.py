@@ -18,6 +18,7 @@ logging.basicConfig(
         format='%(asctime)s; %(levelname)s; %(funcName)s; %(message)s',
         datefmt='%y-%m-%d %H:%M:%S')
 import numpy as np
+np.seterr(divide='ignore', invalid='ignore')
 import scipy.sparse
 
 def computeKRNormVector(matrix, tol=1e-6, delta=0.1, Delta=3):
