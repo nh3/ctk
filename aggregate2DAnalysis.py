@@ -2,7 +2,7 @@
 '''
 Aggregate peak analaysis for a single chromosome
 
-Usage: aggregatePeakAnalysis.py -i <bedpe> -r <res> [options] <cmap>
+Usage: aggregate2DAnalysis.py -i <bedpe> -r <res> [options] <cmap>
 
 Options:
     -i <bedpe>      input regions to aggregate in DOUBLE bedpe format (12 columns)
@@ -57,6 +57,7 @@ def getSubmatrixIdx(regions, res, n):
     regions = regions[(regions.idx_x1>=0) & (regions.idx_x2<=n)
             & (regions.idx_y1>=0) & (regions.idx_y2<=n)]
     regions = regions[(regions.idx_x1<regions.idx_x1c-1) & (regions.idx_x2c<regions.idx_x2-1) &
+            (regions.idx_x1c<regions.idx_x2c-1) & (regions.idx_y1c<regions.idx_y2c-1) &
             (regions.idx_y1<regions.idx_y1c-1) & (regions.idx_y2c<regions.idx_y2-1)]
     return regions
 
@@ -85,6 +86,10 @@ def extractSubMatrix(matrix, regions, bgmat=None):
 
 def scaleCompartments(mat, region, nflnk, ncntr):
     logging.debug(mat.shape)
+    Ns = ncntr + 2*nflnk
+    ns = nflnk + ncntr
+    new_mat = np.zeros((Ns, Ns))
+
     X,Y = mat.shape
     x1 = int(region.idx_x1c - region.idx_x1)
     x2 = int(region.idx_x2c - region.idx_x1)
@@ -92,6 +97,7 @@ def scaleCompartments(mat, region, nflnk, ncntr):
     y2 = int(region.idx_y2c - region.idx_y1)
     m1,m2,m3 = x1,x2-x1,X-x2
     n1,n2,n3 = y1,y2-y1,Y-y2
+
     m1x = np.arange(m1)
     n1x = np.arange(n1)
     m2x = np.arange(m2)
@@ -118,7 +124,6 @@ def scaleCompartments(mat, region, nflnk, ncntr):
     bottomleft = mat[x2:X,0:y1]
     bottomright = mat[x2:X,y2:Y]
 
-    kf = min(3, nflnk-1)
     km1 = min(3, m1-1)
     kn1 = min(3, n1-1)
     km2 = min(3, m2-1)
@@ -145,10 +150,6 @@ def scaleCompartments(mat, region, nflnk, ncntr):
     bottomright_scaled = bottomright_rbs(m3s,n3s)
     topright_scaled = topright_rbs(m1s,n3s)
 
-    Ns = ncntr + 2*nflnk
-    ns = nflnk + ncntr
-    new_mat = np.zeros((Ns, Ns))
-    logging.debug(new_mat.shape)
     new_mat[0:nflnk,0:nflnk] = topleft_scaled
     new_mat[0:nflnk,nflnk:ns] = top_scaled
     new_mat[0:nflnk,ns:Ns] = topright_scaled
