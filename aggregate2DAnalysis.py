@@ -2,16 +2,14 @@
 '''
 Aggregate peak analaysis for a single chromosome
 
-Usage: aggregatePeakAnalysis.py -i <bedpe> -r <res> [options] <cmap>
+Usage: aggregate2DAnalysis.py -i <bedpe> -r <res> [options] <cmap>
 
 Options:
-    -i <bedpe>      input regions to aggregate in bedpe format
-    -m <mode>       "center": align regions on the center; "interval": align whole interval [default: center]
+    -i <bedpe>      input regions to aggregate in DOUBLE bedpe format (12 columns)
     -o <outprfx>    output prefix [default: ]
     -r <res>        resolution in bp
-    -f <nflnk>      number of flanking bins [default: 10]
-    -s <nscale>     number of internal bins to scale the whole interval to, needed by "-m <mode>" [default: 10]
-    -d <minD>       minimum distance, default set to ceiling(sqrt(2)*nflnk)*res
+    -f <nflnk>      number of flanking bins [default: 5]
+    -c <ncntr>      number of center bins to scale the whole interval to [default: 10]
     -z <mnzp>       minimum proportion of submatrix value being non-zero [default: 0.0]
     --rmbg          remove background from distance decay
     --full          write full submatrices values
@@ -37,57 +35,30 @@ from scipy.interpolate import RectBivariateSpline
 
 def readRegions(filename):
     regions = pd.read_table(filename, header=None,
-            names=['c1','s1','e1','c2','s2','e2'],
-            dtype={'c1':str,'s1':int,'e1':int,'c2':str,'s2':int,'e2':int})
+            names=['c1','s1','e1','c2','s2','e2','c1c','s1c','e1c','c2c','s2c','e2c'],
+            dtype={'c1':str,'s1':int,'e1':int,'c2':str,'s2':int,'e2':int,
+                'c1c':str,'s1c':int,'e1c':int,'c2c':str,'s2c':int,'e2c':int})
     return regions
 
 
-def getSubmatrixIdxForLoops(regions, res, n, nflnk, minD=None):
+def getSubmatrixIdx(regions, res, n):
     """
     res: resolution in bp
     n: cMap dimension in bins
-    nflnk: number of flanking bins
-    minD: minimum distance between loop anchor in bp
     """
-    regions['m1'] = ((regions.s1+regions.e1)/2).astype(int)
-    regions['m2'] = ((regions.s2+regions.e2)/2).astype(int)
-    if minD is None:
-        minD = np.ceil(nflnk*np.sqrt(2)) * res
-    regions = regions[np.abs(regions.m1-regions.m2)>=minD]
-
-    regions['idx1'] = np.ceil((regions.m1-res+0.1)/res).astype(int)
-    regions['idx2'] = np.ceil((regions.m2-res+0.1)/res).astype(int)
-    regions['idx_x1'] = regions.idx1 - nflnk
-    regions['idx_x2'] = regions.idx1 + nflnk + 1
-    regions['idx_y1'] = regions.idx2 - nflnk
-    regions['idx_y2'] = regions.idx2 + nflnk + 1
-    return regions
-
-
-def getSubmatrixIdxForCompartments(regions, res, n, nflnk):
-    """
-    res: resolution in bp
-    n: cMap dimension in bins
-    nflnk: number of flanking bins
-    """
-    regions['idx_s1'] = np.ceil((regions.s1-res+0.1)/res).astype(int)
-    regions['idx_e1'] = np.ceil((regions.e1-res+0.1)/res).astype(int)
-    regions['idx_s2'] = np.ceil((regions.s2-res+0.1)/res).astype(int)
-    regions['idx_e2'] = np.ceil((regions.e2-res+0.1)/res).astype(int)
-    regions['idx_x1'] = regions.idx_s1 - nflnk
-    regions['idx_x2'] = regions.idx_e1 + nflnk + 1
-    regions['idx_y1'] = regions.idx_s2 - nflnk
-    regions['idx_y2'] = regions.idx_e2 + nflnk + 1
-    return regions
-
-
-def getSubmatrixIdx(regions, mode, res, n, nflnk, minD=None):
-    if mode == 'center':
-        regions = getSubmatrixIdxForLoops(regions, res, n, nflnk, minD)
-    else:
-        regions = getSubmatrixIdxForCompartments(regions, res, n, nflnk)
+    regions['idx_x1'] = np.ceil((regions.s1-res+0.1)/res).astype(int)
+    regions['idx_x2'] = np.ceil((regions.e1-res+0.1)/res).astype(int)
+    regions['idx_y1'] = np.ceil((regions.s2-res+0.1)/res).astype(int)
+    regions['idx_y2'] = np.ceil((regions.e2-res+0.1)/res).astype(int)
+    regions['idx_x1c'] = np.ceil((regions.s1c-res+0.1)/res).astype(int)
+    regions['idx_x2c'] = np.ceil((regions.e1c-res+0.1)/res).astype(int)
+    regions['idx_y1c'] = np.ceil((regions.s2c-res+0.1)/res).astype(int)
+    regions['idx_y2c'] = np.ceil((regions.e2c-res+0.1)/res).astype(int)
     regions = regions[(regions.idx_x1>=0) & (regions.idx_x2<=n)
             & (regions.idx_y1>=0) & (regions.idx_y2<=n)]
+    regions = regions[(regions.idx_x1<regions.idx_x1c-1) & (regions.idx_x2c<regions.idx_x2-1) &
+            (regions.idx_x1c<regions.idx_x2c-1) & (regions.idx_y1c<regions.idx_y2c-1) &
+            (regions.idx_y1<regions.idx_y1c-1) & (regions.idx_y2c<regions.idx_y2-1)]
     return regions
 
 
@@ -113,63 +84,81 @@ def extractSubMatrix(matrix, regions, bgmat=None):
     return submats
 
 
-def scaleCompartments(mat, nflnk, nscale):
-    M,N = mat.shape
+def scaleCompartments(mat, region, nflnk, ncntr):
     logging.debug(mat.shape)
-    m1 = nflnk
-    m2 = M - nflnk
-    n1 = m1
-    n2 = N - nflnk
-    m = m2 - m1
-    n = n2 - n1
-    m1x = np.arange(m1)
-    n1x = m1x
-    mx = np.arange(m)
-    nx = np.arange(n)
-    mxs = np.linspace(0,m-1,nscale)
-    nxs = np.linspace(0,n-1,nscale)
-
-    top = mat[0:m1,n1:n2]
-    logging.debug(top.shape)
-    left = mat[m1:m2,0:n1]
-    logging.debug(left.shape)
-    bottom = mat[m2:M,n1:n2]
-    right = mat[m1:m2,n2:N]
-    center = mat[m1:m2,n1:n2]
-    logging.debug(center.shape)
-    topleft = mat[0:m1,0:n1]
-    topright = mat[0:m1,n2:N]
-    bottomleft = mat[m2:M,0:n1]
-    bottomright = mat[m2:M,n2:N]
-
-    kf = min(3, nflnk-1)
-    km = min(3, m-1)
-    kn = min(3, n-1)
-    top_rbs = RectBivariateSpline(m1x, nx, top, kx=kf, ky=kn)
-    left_rbs = RectBivariateSpline(mx, n1x, left, kx=km, ky=kf)
-    bottom_rbs = RectBivariateSpline(m1x, nx, bottom, kx=kf, ky=kn)
-    right_rbs = RectBivariateSpline(mx, n1x, right, kx=km, ky=kf)
-    center_rbs = RectBivariateSpline(mx, nx, center, kx=km, ky=kn)
-
-    top_scaled = top_rbs(m1x,nxs)
-    left_scaled = left_rbs(mxs,n1x)
-    bottom_scaled = bottom_rbs(m1x,nxs)
-    right_scaled = right_rbs(mxs,n1x)
-    center_scaled = center_rbs(mxs,nxs)
-
-    Ns = nscale + 2*nflnk
-    n2s = nflnk + nscale
+    Ns = ncntr + 2*nflnk
+    ns = nflnk + ncntr
     new_mat = np.zeros((Ns, Ns))
-    logging.debug(new_mat.shape)
-    new_mat[0:n1,0:n1] = topleft
-    new_mat[0:n1,n1:n2s] = top_scaled
-    new_mat[0:n1,n2s:Ns] = topright
-    new_mat[n1:n2s,0:n1] = left_scaled
-    new_mat[n1:n2s,n1:n2s] = center_scaled
-    new_mat[n1:n2s,n2s:Ns] = right_scaled
-    new_mat[n2s:Ns,0:n1] = bottomleft
-    new_mat[n2s:Ns,n1:n2s] = bottom_scaled
-    new_mat[n2s:Ns,n2s:Ns] = bottomright
+
+    X,Y = mat.shape
+    x1 = int(region.idx_x1c - region.idx_x1)
+    x2 = int(region.idx_x2c - region.idx_x1)
+    y1 = int(region.idx_y1c - region.idx_y1)
+    y2 = int(region.idx_y2c - region.idx_y1)
+    m1,m2,m3 = x1,x2-x1,X-x2
+    n1,n2,n3 = y1,y2-y1,Y-y2
+
+    m1x = np.arange(m1)
+    n1x = np.arange(n1)
+    m2x = np.arange(m2)
+    n2x = np.arange(n2)
+    m3x = np.arange(m3)
+    n3x = np.arange(n3)
+    m1s = np.linspace(0,m1-1,nflnk)
+    n1s = np.linspace(0,n1-1,nflnk)
+    m2s = np.linspace(0,m2-1,ncntr)
+    n2s = np.linspace(0,n2-1,ncntr)
+    m3s = np.linspace(0,m3-1,nflnk)
+    n3s = np.linspace(0,n3-1,nflnk)
+
+    top = mat[0:x1,y1:y2]
+    logging.debug(top.shape)
+    left = mat[x1:x2,0:y1]
+    logging.debug(left.shape)
+    bottom = mat[x2:X,y1:y2]
+    right = mat[x1:x2,y2:Y]
+    center = mat[x1:x2,y1:y2]
+    logging.debug(center.shape)
+    topleft = mat[0:x1,0:y1]
+    topright = mat[0:x1,y2:Y]
+    bottomleft = mat[x2:X,0:y1]
+    bottomright = mat[x2:X,y2:Y]
+
+    km1 = min(3, m1-1)
+    kn1 = min(3, n1-1)
+    km2 = min(3, m2-1)
+    kn2 = min(3, n2-1)
+    km3 = min(3, m3-1)
+    kn3 = min(3, n3-1)
+    top_rbs = RectBivariateSpline(m1x, n2x, top, kx=km1, ky=kn2)
+    left_rbs = RectBivariateSpline(m2x, n1x, left, kx=km2, ky=kn1)
+    bottom_rbs = RectBivariateSpline(m3x, n2x, bottom, kx=km3, ky=kn2)
+    right_rbs = RectBivariateSpline(m2x, n3x, right, kx=km2, ky=kn3)
+    center_rbs = RectBivariateSpline(m2x, n2x, center, kx=km2, ky=kn2)
+    topleft_rbs = RectBivariateSpline(m1x, n1x, topleft, kx=km1, ky=kn1)
+    bottomleft_rbs = RectBivariateSpline(m3x, n1x, bottomleft, kx=km3, ky=kn1)
+    topright_rbs = RectBivariateSpline(m1x, n3x, topright, kx=km1, ky=kn3)
+    bottomright_rbs = RectBivariateSpline(m3x, n3x, bottomright, kx=km3, ky=kn3)
+
+    top_scaled = top_rbs(m1s,n2s)
+    left_scaled = left_rbs(m2s,n1s)
+    bottom_scaled = bottom_rbs(m3s,n2s)
+    right_scaled = right_rbs(m2s,n3s)
+    center_scaled = center_rbs(m2s,n2s)
+    topleft_scaled = topleft_rbs(m1s,n1s)
+    bottomleft_scaled = bottomleft_rbs(m3s,n1s)
+    bottomright_scaled = bottomright_rbs(m3s,n3s)
+    topright_scaled = topright_rbs(m1s,n3s)
+
+    new_mat[0:nflnk,0:nflnk] = topleft_scaled
+    new_mat[0:nflnk,nflnk:ns] = top_scaled
+    new_mat[0:nflnk,ns:Ns] = topright_scaled
+    new_mat[nflnk:ns,0:nflnk] = left_scaled
+    new_mat[nflnk:ns,nflnk:ns] = center_scaled
+    new_mat[nflnk:ns,ns:Ns] = right_scaled
+    new_mat[ns:Ns,0:nflnk] = bottomleft_scaled
+    new_mat[ns:Ns,nflnk:ns] = bottom_scaled
+    new_mat[ns:Ns,ns:Ns] = bottomright_scaled
 
     return new_mat
 
@@ -236,13 +225,9 @@ def main(args):
     logging.info(args)
     regionFn = args['i']
     outprfx = args['o']
-    mode = args['m']
     res = int(args['r'])
-    minD = args['d']
-    if minD is not None:
-        minD = int(minD)
     nflnk = int(args['f'])
-    nscale = int(args['s'])
+    ncntr = int(args['c'])
     mnzp = float(args['z'])
     cmapFn = args['cmap']
     rmbg = args['rmbg']
@@ -260,26 +245,20 @@ def main(args):
     else:
         bgmat = None
 
-    regions = getSubmatrixIdx(regions, mode, res, n, nflnk, minD)
+    regions = getSubmatrixIdx(regions, res, n)
+    assert regions.shape[0]>0, 'No submats'
 
     submats = extractSubMatrix(matrix, regions, bgmat=bgmat)
-    if mode == 'center':
-        width = 2*nflnk+1
-        k_correct_shape = np.array([sm.shape==(width,width) for sm in submats])
-    else:
-        k_correct_shape = np.array([len(sm.shape)==2 and min(sm.shape)>2*nflnk+1
-            for sm in submats])
+
     submat_sparsity = np.array([matrixSparsity(sm) for sm in submats])
-    k_include = np.logical_and(k_correct_shape, submat_sparsity > mnzp)
+    k_include = submat_sparsity > mnzp
     assert sum(k_include) > 0, 'No submats'
 
     submats = [submats[i] for i in np.where(k_include)[0]]
+    regions = regions[k_include]
 
-    if mode == 'center':
-        submats = np.array(submats)
-    else:
-        submats = np.array([scaleCompartments(sm, nflnk, nscale)
-            for sm in submats])
+    submats = np.array([scaleCompartments(submats[i], regions.iloc[[i]], nflnk, ncntr)
+        for i in xrange(len(submats))])
     matMean = np.nanmean(submats, axis=0)
     matMean[np.isnan(matMean)] = np.nanmedian(matMean)
     matMean[np.isinf(matMean)] = np.nanmedian(matMean)
@@ -302,9 +281,9 @@ def main(args):
 
     center,bg,T,L,B,R,TL,BL,BR,TR = calcApaStats(submats, nflnk)
     stats = pd.DataFrame({
-        'chrom'    :regions.c1[k_include],
-        'start'    :regions.s1[k_include],
-        'end'      :regions.s2[k_include],
+        'chrom'    :regions.c1,
+        'start'    :regions.s1c,
+        'end'      :regions.s2c,
         'center'   :center,
         'bg'       :bg,
         'T'        :T,
