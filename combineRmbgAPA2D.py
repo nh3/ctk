@@ -19,7 +19,7 @@ import errno
 import os.path
 import numpy as np
 import pandas as pd
-from scipy.stats import ttest_ind, ttest_1samp
+from scipy.stats import ttest_ind
 from scipy.ndimage.filters import gaussian_filter
 import matplotlib
 matplotlib.use('Agg')
@@ -70,6 +70,8 @@ def main(args):
     plotHeatmap(matMean, outPdf, maxPct=cRange, maxFC=maxF)
     stat = np.vstack(stats)
     stat = stat[~np.logical_or(np.isinf(stat).any(axis=1), np.isnan(stat).any(axis=1))]
+    k = np.sum(stat>0, axis=1) >= 5
+    stat = stat[k]
 
     center = stat[:,0]
     bg = stat[:,1]
