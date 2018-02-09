@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 '''
 Usage: make2Dfrom1D.py domain [options] -g <chrL> <input1>
-       make2Dfrom1D.py (center|compartment) [options] -g <chrL> <input1> [<input2>]
+       make2Dfrom1D.py (loop|compartment) [options] -g <chrL> <input1> [<input2>]
 
 Options:
     <input1>    input 1D features in BED format
@@ -163,7 +163,7 @@ def main(args):
     chrLen = read_chrom_length(args['g'])
 
     features1 = get_neighbour_boundary(features1, chrLen)
-    if args['center']:
+    if args['loop']:
         features1 = get_center_boundary(features1, focal=True)
     else:
         features1 = get_center_boundary(features1, focal=False)
@@ -172,7 +172,7 @@ def main(args):
     if inputFn2 is not None:
         features2 = read_features(inputFn2)
         features2 = get_neighbour_boundary(features2, chrLen)
-        if args['center']:
+        if args['loop']:
             features2 = get_center_boundary(features2, focal=True)
         else:
             features2 = get_center_boundary(features2, focal=False)
