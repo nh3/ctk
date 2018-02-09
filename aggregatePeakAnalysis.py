@@ -190,7 +190,7 @@ def main(args):
         'rest_mean':rest_means,
         'LL_mean'  :LL_means})
     stats.to_csv(outprfx+typ+'.stat', sep='\t', float_format='%.2e',
-            columns=['chrom','start','end','mid','rest_means','LL_mean'],
+            columns=['chrom','start','end','mid','rest_mean','LL_mean'],
             header=False, index=False)
 
 
