@@ -30,7 +30,16 @@ import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 import pandas as pd
 from scipy.sparse import load_npz
-from scipy.interpolate import splrep,splev,bisplrep,bisplev
+from scipy.interpolate import UnivariateSpline,RectBivariateSpline
+
+
+def memodict(f):
+    """ Memoization decorator for a function taking a single argument """
+    class memodict(dict):
+        def __missing__(self, key):
+            ret = self[key] = f(key)
+            return ret
+    return memodict().__getitem__
 
 
 def readRegions(filename):
@@ -46,14 +55,14 @@ def getSubmatrixIdx(regions, res, n):
     res: resolution in bp
     n: cMap dimension in bins
     """
-    regions['idx_x1'] = np.ceil((regions.s1-res+0.1)/res).astype(int)
-    regions['idx_x2'] = np.ceil((regions.e1-res+0.1)/res).astype(int)
-    regions['idx_y1'] = np.ceil((regions.s2-res+0.1)/res).astype(int)
-    regions['idx_y2'] = np.ceil((regions.e2-res+0.1)/res).astype(int)
-    regions['idx_x1c'] = np.ceil((regions.s1c-res+0.1)/res).astype(int)
-    regions['idx_x2c'] = np.ceil((regions.e1c-res+0.1)/res).astype(int)
-    regions['idx_y1c'] = np.ceil((regions.s2c-res+0.1)/res).astype(int)
-    regions['idx_y2c'] = np.ceil((regions.e2c-res+0.1)/res).astype(int)
+    regions['idx_x1'] = np.round(regions.s1/res).astype(int)
+    regions['idx_x2'] = np.round(regions.e1/res).astype(int)
+    regions['idx_y1'] = np.round(regions.s2/res).astype(int)
+    regions['idx_y2'] = np.round(regions.e2/res).astype(int)
+    regions['idx_x1c'] = np.round(regions.s1c/res).astype(int)
+    regions['idx_x2c'] = np.round(regions.e1c/res).astype(int)
+    regions['idx_y1c'] = np.round(regions.s2c/res).astype(int)
+    regions['idx_y2c'] = np.round(regions.e2c/res).astype(int)
     regions = regions[(regions.idx_x1>=0) & (regions.idx_x2<=n)
             & (regions.idx_y1>=0) & (regions.idx_y2<=n)]
     regions = regions[(regions.idx_x1<regions.idx_x1c) & (regions.idx_x2c<regions.idx_x2) &
@@ -84,40 +93,49 @@ def extractSubMatrix(matrix, regions, bgmat=None):
     return submats
 
 
+@memodict
+def scaleIdx(shape):
+    n,ns = shape
+    nx = np.arange(n)
+    nsx = np.linspace(0,n-1,ns)
+    return nx,nsx
+
+
 def scaleMatrix(mat, ms, ns):
     m,n = mat.shape
-    msx = np.linspace(0,m-1,ms)
-    nsx = np.linspace(0,n-1,ns)
     if m == 1 and n == 1:
         tgt = np.full((ms,ns), mat[0,0])
     elif m == 1 and n > 1:
-        nx = np.arange(n)
+        nx,nsx = scaleIdx((n,ns))
         kn = min(3, n-1)
-        spl = splrep(nx,mat[0],k=kn)
-        tgt = np.repeat(splev(nsx, spl).reshape((1,ns)), ms, axis=0)
+        spl = UnivariateSpline(nx,mat[0], k=kn)
+        tgt = np.repeat(spl(nsx).reshape((1,ns)), ms, axis=0)
     elif m > 1 and n == 1:
-        mx = np.arange(m)
+        mx,msx = scaleIdx((m,ms))
         km = min(3, m-1)
-        spl = splrep(mx,mat[:,0],k=km)
-        tgt = np.repeat(splev(msx, spl).reshape((ms,1)), ns, axis=1)
+        spl = UnivariateSpline(mx,mat[:,0], k=km)
+        tgt = np.repeat(spl(msx).reshape((ms,1)), ns, axis=1)
     else:
-        mx = np.arange(m)
-        nx = np.arange(n)
+        mx,msx = scaleIdx((m,ms))
+        nx,nsx = scaleIdx((n,ns))
         km = min(3, m-1)
         kn = min(3, n-1)
-        spl = bisplrep(mx, nx, mat, kx=km, ky=kn)
-        tgt = bisplev(msx, nsx, spl)
-        tgt = rbs(msx, nsx)
+        rbs = RectBivariateSpline(mx,nx,mat,kx=km,ky=kn)
+        tgt = rbs(msx,nsx)
     return tgt
 
 
 def scaleCompartments(mat, region, nflnk, ncntr):
     logging.debug(mat.shape)
+    X,Y = mat.shape
     Ns = ncntr + 2*nflnk
+
+    if X==Ns and Y==Ns:
+        return mat
+
     ns = nflnk + ncntr
     new_mat = np.zeros((Ns, Ns))
 
-    X,Y = mat.shape
     x1 = int(region.idx_x1c - region.idx_x1)
     x2 = int(region.idx_x2c - region.idx_x1)
     y1 = int(region.idx_y1c - region.idx_y1)
@@ -142,7 +160,6 @@ def scaleCompartments(mat, region, nflnk, ncntr):
     new_mat[ns:Ns,0:nflnk] = scaleMatrix(bottomleft, nflnk, nflnk)
     new_mat[ns:Ns,nflnk:ns] = scaleMatrix(bottom, nflnk, ncntr)
     new_mat[ns:Ns,ns:Ns] = scaleMatrix(bottomright, nflnk, nflnk)
-
     return new_mat
 
 
