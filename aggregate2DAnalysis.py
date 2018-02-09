@@ -30,7 +30,16 @@ import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 import pandas as pd
 from scipy.sparse import load_npz
-from scipy.interpolate import RectBivariateSpline
+from scipy.interpolate import UnivariateSpline,RectBivariateSpline
+
+
+def memodict(f):
+    """ Memoization decorator for a function taking a single argument """
+    class memodict(dict):
+        def __missing__(self, key):
+            ret = self[key] = f(key)
+            return ret
+    return memodict().__getitem__
 
 
 def readRegions(filename):
@@ -46,19 +55,19 @@ def getSubmatrixIdx(regions, res, n):
     res: resolution in bp
     n: cMap dimension in bins
     """
-    regions['idx_x1'] = np.ceil((regions.s1-res+0.1)/res).astype(int)
-    regions['idx_x2'] = np.ceil((regions.e1-res+0.1)/res).astype(int)
-    regions['idx_y1'] = np.ceil((regions.s2-res+0.1)/res).astype(int)
-    regions['idx_y2'] = np.ceil((regions.e2-res+0.1)/res).astype(int)
-    regions['idx_x1c'] = np.ceil((regions.s1c-res+0.1)/res).astype(int)
-    regions['idx_x2c'] = np.ceil((regions.e1c-res+0.1)/res).astype(int)
-    regions['idx_y1c'] = np.ceil((regions.s2c-res+0.1)/res).astype(int)
-    regions['idx_y2c'] = np.ceil((regions.e2c-res+0.1)/res).astype(int)
+    regions['idx_x1'] = np.round(regions.s1/res).astype(int)
+    regions['idx_x2'] = np.round(regions.e1/res).astype(int)
+    regions['idx_y1'] = np.round(regions.s2/res).astype(int)
+    regions['idx_y2'] = np.round(regions.e2/res).astype(int)
+    regions['idx_x1c'] = np.round(regions.s1c/res).astype(int)
+    regions['idx_x2c'] = np.round(regions.e1c/res).astype(int)
+    regions['idx_y1c'] = np.round(regions.s2c/res).astype(int)
+    regions['idx_y2c'] = np.round(regions.e2c/res).astype(int)
     regions = regions[(regions.idx_x1>=0) & (regions.idx_x2<=n)
             & (regions.idx_y1>=0) & (regions.idx_y2<=n)]
-    regions = regions[(regions.idx_x1<regions.idx_x1c-1) & (regions.idx_x2c<regions.idx_x2-1) &
-            (regions.idx_x1c<regions.idx_x2c-1) & (regions.idx_y1c<regions.idx_y2c-1) &
-            (regions.idx_y1<regions.idx_y1c-1) & (regions.idx_y2c<regions.idx_y2-1)]
+    regions = regions[(regions.idx_x1<regions.idx_x1c) & (regions.idx_x2c<regions.idx_x2) &
+            (regions.idx_x1c<regions.idx_x2c) & (regions.idx_y1c<regions.idx_y2c) &
+            (regions.idx_y1<regions.idx_y1c) & (regions.idx_y2c<regions.idx_y2)]
     return regions
 
 
@@ -84,82 +93,73 @@ def extractSubMatrix(matrix, regions, bgmat=None):
     return submats
 
 
+@memodict
+def scaleIdx(shape):
+    n,ns = shape
+    nx = np.arange(n)
+    nsx = np.linspace(0,n-1,ns)
+    return nx,nsx
+
+
+def scaleMatrix(mat, ms, ns):
+    m,n = mat.shape
+    if m == 1 and n == 1:
+        tgt = np.full((ms,ns), mat[0,0])
+    elif m == 1 and n > 1:
+        nx,nsx = scaleIdx((n,ns))
+        kn = min(3, n-1)
+        spl = UnivariateSpline(nx,mat[0], k=kn)
+        tgt = np.repeat(spl(nsx).reshape((1,ns)), ms, axis=0)
+    elif m > 1 and n == 1:
+        mx,msx = scaleIdx((m,ms))
+        km = min(3, m-1)
+        spl = UnivariateSpline(mx,mat[:,0], k=km)
+        tgt = np.repeat(spl(msx).reshape((ms,1)), ns, axis=1)
+    else:
+        mx,msx = scaleIdx((m,ms))
+        nx,nsx = scaleIdx((n,ns))
+        km = min(3, m-1)
+        kn = min(3, n-1)
+        rbs = RectBivariateSpline(mx,nx,mat,kx=km,ky=kn)
+        tgt = rbs(msx,nsx)
+    return tgt
+
+
 def scaleCompartments(mat, region, nflnk, ncntr):
     logging.debug(mat.shape)
+    X,Y = mat.shape
     Ns = ncntr + 2*nflnk
+
+    if X==Ns and Y==Ns:
+        return mat
+
     ns = nflnk + ncntr
     new_mat = np.zeros((Ns, Ns))
 
-    X,Y = mat.shape
     x1 = int(region.idx_x1c - region.idx_x1)
     x2 = int(region.idx_x2c - region.idx_x1)
     y1 = int(region.idx_y1c - region.idx_y1)
     y2 = int(region.idx_y2c - region.idx_y1)
-    m1,m2,m3 = x1,x2-x1,X-x2
-    n1,n2,n3 = y1,y2-y1,Y-y2
-
-    m1x = np.arange(m1)
-    n1x = np.arange(n1)
-    m2x = np.arange(m2)
-    n2x = np.arange(n2)
-    m3x = np.arange(m3)
-    n3x = np.arange(n3)
-    m1s = np.linspace(0,m1-1,nflnk)
-    n1s = np.linspace(0,n1-1,nflnk)
-    m2s = np.linspace(0,m2-1,ncntr)
-    n2s = np.linspace(0,n2-1,ncntr)
-    m3s = np.linspace(0,m3-1,nflnk)
-    n3s = np.linspace(0,n3-1,nflnk)
 
     top = mat[0:x1,y1:y2]
-    logging.debug(top.shape)
     left = mat[x1:x2,0:y1]
-    logging.debug(left.shape)
     bottom = mat[x2:X,y1:y2]
     right = mat[x1:x2,y2:Y]
     center = mat[x1:x2,y1:y2]
-    logging.debug(center.shape)
     topleft = mat[0:x1,0:y1]
     topright = mat[0:x1,y2:Y]
     bottomleft = mat[x2:X,0:y1]
     bottomright = mat[x2:X,y2:Y]
 
-    km1 = min(3, m1-1)
-    kn1 = min(3, n1-1)
-    km2 = min(3, m2-1)
-    kn2 = min(3, n2-1)
-    km3 = min(3, m3-1)
-    kn3 = min(3, n3-1)
-    top_rbs = RectBivariateSpline(m1x, n2x, top, kx=km1, ky=kn2)
-    left_rbs = RectBivariateSpline(m2x, n1x, left, kx=km2, ky=kn1)
-    bottom_rbs = RectBivariateSpline(m3x, n2x, bottom, kx=km3, ky=kn2)
-    right_rbs = RectBivariateSpline(m2x, n3x, right, kx=km2, ky=kn3)
-    center_rbs = RectBivariateSpline(m2x, n2x, center, kx=km2, ky=kn2)
-    topleft_rbs = RectBivariateSpline(m1x, n1x, topleft, kx=km1, ky=kn1)
-    bottomleft_rbs = RectBivariateSpline(m3x, n1x, bottomleft, kx=km3, ky=kn1)
-    topright_rbs = RectBivariateSpline(m1x, n3x, topright, kx=km1, ky=kn3)
-    bottomright_rbs = RectBivariateSpline(m3x, n3x, bottomright, kx=km3, ky=kn3)
-
-    top_scaled = top_rbs(m1s,n2s)
-    left_scaled = left_rbs(m2s,n1s)
-    bottom_scaled = bottom_rbs(m3s,n2s)
-    right_scaled = right_rbs(m2s,n3s)
-    center_scaled = center_rbs(m2s,n2s)
-    topleft_scaled = topleft_rbs(m1s,n1s)
-    bottomleft_scaled = bottomleft_rbs(m3s,n1s)
-    bottomright_scaled = bottomright_rbs(m3s,n3s)
-    topright_scaled = topright_rbs(m1s,n3s)
-
-    new_mat[0:nflnk,0:nflnk] = topleft_scaled
-    new_mat[0:nflnk,nflnk:ns] = top_scaled
-    new_mat[0:nflnk,ns:Ns] = topright_scaled
-    new_mat[nflnk:ns,0:nflnk] = left_scaled
-    new_mat[nflnk:ns,nflnk:ns] = center_scaled
-    new_mat[nflnk:ns,ns:Ns] = right_scaled
-    new_mat[ns:Ns,0:nflnk] = bottomleft_scaled
-    new_mat[ns:Ns,nflnk:ns] = bottom_scaled
-    new_mat[ns:Ns,ns:Ns] = bottomright_scaled
-
+    new_mat[0:nflnk,0:nflnk] = scaleMatrix(topleft, nflnk, nflnk)
+    new_mat[0:nflnk,nflnk:ns] = scaleMatrix(top, nflnk, ncntr)
+    new_mat[0:nflnk,ns:Ns] = scaleMatrix(topright, nflnk, nflnk)
+    new_mat[nflnk:ns,0:nflnk] = scaleMatrix(left, ncntr, nflnk)
+    new_mat[nflnk:ns,nflnk:ns] = scaleMatrix(center, ncntr, ncntr)
+    new_mat[nflnk:ns,ns:Ns] = scaleMatrix(right, ncntr, nflnk)
+    new_mat[ns:Ns,0:nflnk] = scaleMatrix(bottomleft, nflnk, nflnk)
+    new_mat[ns:Ns,nflnk:ns] = scaleMatrix(bottom, nflnk, ncntr)
+    new_mat[ns:Ns,ns:Ns] = scaleMatrix(bottomright, nflnk, nflnk)
     return new_mat
 
 

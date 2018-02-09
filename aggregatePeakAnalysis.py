@@ -117,15 +117,6 @@ def calcDistanceDecay(matrix, dmat):
     return dd[dmat]
 
 
-#def plotHeatmap(matMean, outpdf):
-#    RdWh = LinearSegmentedColormap.from_list('RdWh', [(0,'white'),(1,'red')])
-#    plt.imshow(matMean, cmap=RdWh)
-#    plt.axis('off')
-#    pp = PdfPages(outpdf)
-#    plt.savefig(pp, format='pdf')
-#    pp.close()
-
-
 def main(args):
     logging.info(args)
     loopFn = args['i']
@@ -190,7 +181,7 @@ def main(args):
         'rest_mean':rest_means,
         'LL_mean'  :LL_means})
     stats.to_csv(outprfx+typ+'.stat', sep='\t', float_format='%.2e',
-            columns=['chrom','start','end','mid','rest_means','LL_mean'],
+            columns=['chrom','start','end','mid','rest_mean','LL_mean'],
             header=False, index=False)
 
 

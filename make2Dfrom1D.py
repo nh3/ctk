@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 '''
 Usage: make2Dfrom1D.py domain [options] -g <chrL> <input1>
-       make2Dfrom1D.py (center|compartment) [options] -g <chrL> <input1> [<input2>]
+       make2Dfrom1D.py (loop|compartment) [options] -g <chrL> <input1> [<input2>]
 
 Options:
     <input1>    input 1D features in BED format
     <input2>    input 1D features in BED format, if given, contacts are made between <input1> and <input2>
     -g <chrL>   chromomsome lengths
+    -r <res>    resolution in bp [default: 1000]
     -f <flkL>   flanking size in bp [default: 0]
     -m <mode>   method to extract flanking regions: fixed, scaled, or truncated [default: truncated]
     -d <minD>   minimum distance [default: 10000]
@@ -63,14 +64,14 @@ def get_neighbour_boundary(features, chrLen):
     logging.debug('done')
     return features
 
-def get_center_boundary(features, focal=True):
+def get_center_boundary(features, res, focal=True):
     CHROM,START,END,MID,PREV_E,NEXT_S = range(6)
     for chrom in features:
         feats = features[chrom]
         n = len(feats)
         for i,f in enumerate(feats):
             if focal:
-                feats[i].extend([f[MID],f[MID]])
+                feats[i].extend([f[MID]-res/2,f[MID]+res/2])
             else:
                 feats[i].extend([f[START],f[END]])
     logging.debug('done')
@@ -154,6 +155,7 @@ def main(args):
     logging.info(args)
     inputFn1 = args['input1']
     inputFn2 = args['input2']
+    res = int(args['r'])
     flkLen = int(args['f'])
     flkMode = args['m']
     minD = int(args['d'])
@@ -163,19 +165,13 @@ def main(args):
     chrLen = read_chrom_length(args['g'])
 
     features1 = get_neighbour_boundary(features1, chrLen)
-    if args['center']:
-        features1 = get_center_boundary(features1, focal=True)
-    else:
-        features1 = get_center_boundary(features1, focal=False)
+    features1 = get_center_boundary(features1, res, focal=args['loop'])
     features1 = get_flanking(features1, w=flkLen, mode=flkMode)
 
     if inputFn2 is not None:
         features2 = read_features(inputFn2)
         features2 = get_neighbour_boundary(features2, chrLen)
-        if args['center']:
-            features2 = get_center_boundary(features2, focal=True)
-        else:
-            features2 = get_center_boundary(features2, focal=False)
+        features2 = get_center_boundary(features2, res, focal=args['loop'])
         features2 = get_flanking(features2, w=flkLen, mode=flkMode)
     else:
         features2 = None
