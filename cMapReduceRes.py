@@ -18,8 +18,6 @@ import logging
 signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 import numpy as np
 import scipy.sparse
-import scipy.sparse.linalg
-import matplotlib.pyplot as plt
 
 def main(args):
     logging.info(args)

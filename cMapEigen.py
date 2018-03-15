@@ -5,6 +5,7 @@ Usage: cMapEigen.py [options] <input> <outprfx>
 Options:
     --corr      calculate based on correlation
     --plot      make plot
+    --sm <int>  smooth window size [default: 51]
     <input>     input sparse matrix
     <outprfx>   output prefix, append "." when appropriate [default: ""]
     --debug     set logging level to DEBUG
@@ -20,6 +21,8 @@ import numpy as np
 import scipy.sparse
 import scipy.sparse.linalg
 import scipy.linalg
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
 from collections import deque
@@ -56,9 +59,9 @@ def clean_mat(mat):
     sd = np.nanstd(d)
     k0 = np.where(np.logical_and(np.logical_and(s>ms-3*ss, s<ms+3*ss), np.logical_and(d>md-3*sd, d<md+3*md)))[0]
     mat = mat[k0][:,k0]
-    return mat
+    return mat,k0
 
-def plot_eigen(mat, V, filename):
+def plot_eigen(mat, V, filename, sm_width=51):
     m,n = V.shape
     hr = np.repeat((n,1),(1,n))
     fig = plt.figure(figsize=(4*n,4*np.sum(hr)))
@@ -68,7 +71,7 @@ def plot_eigen(mat, V, filename):
     for i in xrange(n):
         ax = plt.subplot(gs[i+1])
         y = V[:,i]
-        y_rm = running_median_insort(y, 51)
+        y_rm = running_median_insort(y, sm_width)
         y_res = y - y_rm
         #ymin = np.percentile(y, 0.25)
         #ymax = np.percentile(y, 99.75)
@@ -82,6 +85,7 @@ def plot_eigen(mat, V, filename):
 
 def main(args):
     logging.info(args)
+    smooth_width = int(args['sm'])
     if args['outprfx'] != '' and not args['outprfx'].endswith('.'):
         args['outprfx'] += '.'
     mat = scipy.sparse.load_npz(args['input']).astype(float)
@@ -91,26 +95,29 @@ def main(args):
     kd = np.arange(N)
     mat[kd,kd] = 0.0
     # remove abnormal rows/columns
-    mat = clean_mat(mat)
-    logging.info('dimension after cleaning: {}'.format(mat.shape))
+    cmat,k0 = clean_mat(mat)
+    logging.info('dimension after cleaning: {}'.format(cmat.shape))
     # calculate eigen vectors
     if args['corr']:
-        mat = np.corrcoef(mat.toarray())
-        n = mat.shape[0]
-        mat[np.arange(n),np.arange(n)] = 0.0
-        v,V = scipy.linalg.eigh(mat, eigvals=(n-5,n-1))
+        cmat = np.corrcoef(cmat.toarray())
+        n = cmat.shape[0]
+        cmat[np.arange(n),np.arange(n)] = 0.0
+        v,V = scipy.linalg.eigh(cmat, eigvals=(n-5,n-1))
     else:
-        v,V = scipy.sparse.linalg.eigsh(mat, k=5)
+        v,V = scipy.sparse.linalg.eigsh(cmat, k=5)
     k = np.argsort(-abs(v))
     v = v[k]
-    V = V[:,k]
+    V0 = np.zeros((N,5))*np.nan
+    V0[k0,] = V
+    V0 = V0[:,k]
+    V0[np.isnan(V0)] = np.tile(np.median(V, axis=0), N-len(k0))
     # save and plot
-    np.savetxt(args['outprfx']+'eigenValue.txt', v, fmt='%.4f', delimiter='\t')
-    np.savetxt(args['outprfx']+'eigenVector.txt', V, fmt='%.4f', delimiter='\t')
+    np.savetxt(args['outprfx']+'eigenValue.txt', v, fmt='%.4e', delimiter='\t')
+    np.savetxt(args['outprfx']+'eigenVector.txt', V0, fmt='%.4e', delimiter='\t')
     if args['plot']:
         if not args['corr']:
             mat = mat.toarray()
-        plot_eigen(mat, V, args['outprfx']+'eigenVector.pdf')
+        plot_eigen(mat, V0, args['outprfx']+'eigenVector.pdf', sm_width=smooth_width)
 
 
 if __name__ == '__main__':
