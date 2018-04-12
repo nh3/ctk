@@ -137,7 +137,7 @@ def computeKR(matrix):
         k = np.where(rs>=minD)[0]
         x = computeKRNormVector(matrix[k][:,k], tol=1e-6, delta=0.1, Delta=3)
         if x is not None and not np.any(np.isinf(x)):
-            x0[k] = x
+            x0[k] = x[:,0]
             break
     return x0
 
