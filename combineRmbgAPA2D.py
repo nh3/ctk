@@ -5,8 +5,9 @@ Combine chromosomal APA into genomewide APA
 Usage: combineRmbgAPA2D.py [options] <path> <outprfx>
 
 Options:
-    --maxF <maxF>   max fold change represented by color range [default: 1.5]
-    --cRange <v>    max color range in percentile [default: 99]
+    --maxC <str>    color for max fold change [default: red]
+    --maxF <f>      max fold change represented by color range [default: 1.5]
+    --cRange <f>    max color range in percentile [default: 99]
     --debug         run in debug mode
 '''
 
@@ -28,8 +29,8 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.colors import LinearSegmentedColormap
 
 
-def plotHeatmap(matMean, outpdf, minPct=2, maxPct=98, maxFC=1.5):
-    RdWh = LinearSegmentedColormap.from_list('RdWh', [(0,'white'),(1,'red')])
+def plotHeatmap(matMean, outpdf, minPct=2, maxPct=98, maxFC=1.5, maxCol='red'):
+    RdWh = LinearSegmentedColormap.from_list('RdWh', [(0,'white'),(1,maxCol)])
     xmin = np.nanpercentile(matMean, minPct)
     xmax = np.nanpercentile(matMean, maxPct)
     xmax_cap = xmin*maxFC
@@ -62,6 +63,7 @@ def main(args):
     logging.info(args)
     path = args['path']
     outprfx = args['outprfx']
+    maxC = args['maxC']
     maxF = float(args['maxF'])
     cRange = float(args['cRange'])
     outFn = outprfx + '.rmbgAPA.stat'
@@ -80,7 +82,7 @@ def main(args):
     Ns = [x.shape[0] for x in stats]
     matSum = np.nansum(np.array([n*mat for n,mat in zip(Ns, mats)]), axis=0)
     matMean = matSum / sum(Ns)
-    plotHeatmap(matMean, outPdf, maxPct=cRange, maxFC=maxF)
+    plotHeatmap(matMean, outPdf, maxPct=cRange, maxFC=maxF, maxCol=maxC)
     stat = np.vstack(stats)
     stat = stat[~np.logical_or(np.isinf(stat).any(axis=1), np.isnan(stat).any(axis=1))]
     k = np.sum(stat>0, axis=1) >= 5
