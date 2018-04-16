@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 '''
-Usage: cMapCorr.py <input1> <input2>
+Usage: cMapCorr.py [--debug] <input1> <input2>
 
 Options:
-    <input1>     input matrix 1
-    <input2>     input matrix 2
+    --debug     print debug info
+    <input1>    input matrix 1
+    <input2>    input matrix 2
 '''
 
 from __future__ import print_function
@@ -12,7 +13,17 @@ import sys
 import signal
 import logging
 signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
+import numpy as np
 import scipy.sparse
+from scipy.stats import pearsonr,spearmanr
+
+def get_flatten_idx(mat):
+    n = mat.shape[0]
+    m = len(mat.data)
+    I = mat.indices + np.repeat(np.arange(n)*n, np.diff(mat.indptr))
+    dict_I = {I[i]:i for i in xrange(m) if not np.isnan(mat.data[i])}
+    return dict_I
 
 
 def main(args):
@@ -20,6 +31,14 @@ def main(args):
     inFn2 = args['input2']
     mat1 = scipy.sparse.load_npz(inFn1)
     mat2 = scipy.sparse.load_npz(inFn2)
+    I1 = get_flatten_idx(mat1)
+    I2 = get_flatten_idx(mat2)
+    k = np.intersect1d(I1.keys(), I2.keys(), assume_unique=True)
+    k1 = [I1.get(i, 0) for i in k]
+    k2 = [I2.get(i, 0) for i in k]
+    r,p = pearsonr(np.log(mat1.data[k1]), np.log(mat2.data[k2]))
+    rho,p = spearmanr(mat1.data[k1], mat2.data[k2])
+    print('{}\t{}\t{}\t{}\t{}'.format(inFn1, inFn2, len(k), rho, r))
 
 
 if __name__ == '__main__':
