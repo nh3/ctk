@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 '''
-Usage: cMapBalance.py <inMat> <outMat> <coef>
+Apply matrix balancing using KR method
+
+Usage: cMapBalance.py [options] <inMat> <outMat>
 
 Options:
-    <inMat>     input sparse matrix in scipy npz format
-    <outMat>    output balanced matrix in scipy npz format
-    <coef>      output normalization coeficients
+    --coef <fn>     one column table of correction factors
+    <inMat>         input sparse matrix in scipy npz format
+    <outMat>        output balanced matrix in scipy npz format
 '''
 
 from __future__ import print_function
@@ -148,6 +150,9 @@ def diagSparseMatrix(x):
     i = np.arange(n)
     return scipy.sparse.csr_matrix((x, (i,i)), shape=(n,n), dtype=x.dtype)
 
+def read_coef(fn):
+    x = np.load_txt(fn)
+    return x
 
 def main(args):
     logging.info(args)

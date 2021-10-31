@@ -1,8 +1,11 @@
 #!/usr/bin/env python
 '''
-Usage: cMapCorr.py [--debug] <input1> <input2>
+Calculate pearson and spearman correlation between two C-maps
+
+Usage: cMapCorr.py [--data] <input1> <input2>
 
 Options:
+    --data      print data value instead of statistics 
     --debug     print debug info
     <input1>    input matrix 1
     <input2>    input matrix 2
@@ -14,6 +17,7 @@ import signal
 import logging
 signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
+import sys
 import numpy as np
 import scipy.sparse
 from scipy.stats import pearsonr,spearmanr
@@ -36,9 +40,14 @@ def main(args):
     k = np.intersect1d(I1.keys(), I2.keys(), assume_unique=True)
     k1 = [I1.get(i, 0) for i in k]
     k2 = [I2.get(i, 0) for i in k]
-    r,p = pearsonr(np.log(mat1.data[k1]), np.log(mat2.data[k2]))
-    rho,p = spearmanr(mat1.data[k1], mat2.data[k2])
-    print('{}\t{}\t{}\t{}\t{}'.format(inFn1, inFn2, len(k), rho, r))
+    if args['data']:
+        import pandas as pd
+        odf = pd.DataFrame({'map1':mat1.data[k1],'map2':mat2.data[k2]})
+        odf.to_csv(sys.stdout, sep='\t', columns=['map1','map2'], header=False, index=False)
+    else:
+        r,p = pearsonr(mat1.data[k1], mat2.data[k2])
+        rho,p = spearmanr(mat1.data[k1], mat2.data[k2])
+        print('{}\t{}\t{}\t{}\t{}'.format(inFn1, inFn2, len(k), rho, r))
 
 
 if __name__ == '__main__':

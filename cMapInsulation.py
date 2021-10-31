@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 '''
+Calculate insulation score from C-map
+
 Usage: cMapInsulation.py -r <res> -o <prfx> [options] <input>
 
 Options:

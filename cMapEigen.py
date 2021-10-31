@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 '''
+Calculate eigen vectors for C-map
+
 Usage: cMapEigen.py [options] <input> <outprfx>
 
 Options:
@@ -31,7 +33,6 @@ from itertools import islice
 
 
 def running_median_insort(seq, window_size):
-    """Contributed by Peter Otten"""
     seq = iter(seq)
     d = deque()
     s = []
@@ -73,11 +74,7 @@ def plot_eigen(mat, V, filename, sm_width=51):
         y = V[:,i]
         y_rm = running_median_insort(y, sm_width)
         y_res = y - y_rm
-        #ymin = np.percentile(y, 0.25)
-        #ymax = np.percentile(y, 99.75)
-        #ax.plot(y_res)
         ax.bar(range(m), y_res)
-        #ax.set_ylim([ymin,ymax])
         plt.margins(x=0,y=0)
     plt.tight_layout()
     plt.savefig(filename)

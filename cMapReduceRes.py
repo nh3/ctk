@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 '''
+Reduce C-map resolution
+
 Usage: cMapReduceRes.py -f <fromRes> -t <toRes> <input> <output>
 
 Options:
@@ -38,6 +40,9 @@ def main(args):
         tmp_mat[0:n,0:n] = mat
         new_mat = tmp_mat.reshape(m+1,z,m+1,z).sum(-1).sum(1)
         del tmp_mat
+    # set diagonal to 0
+    m = new_mat.shape[0]
+    new_mat[np.arange(m), np.arange(m)] = 0.0
     scipy.sparse.save_npz(args['output'], scipy.sparse.csr_matrix(new_mat))
 
 
